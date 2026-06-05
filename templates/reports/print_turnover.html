@@ -1,0 +1,35 @@
+{% extends "reports/report_base.html" %}
+
+{% block content %}
+<h2>Статистика текучести за {{ year }} год</h2>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ hired }}</div>
+        <div class="stat-label">Принято</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ dismissed }}</div>
+        <div class="stat-label">Уволено</div>
+    </div>
+</div>
+
+<h2>Принятые по месяцам</h2>
+<table>
+    <thead><tr><th>Месяц</th><th>Количество</th></tr></thead>
+    <tbody>
+        {% for m in range(1, 13) %}
+        <tr><td>{{ m }} месяц</td><td>{{ hired_by_month[m] }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Уволенные по месяцам</h2>
+<table>
+    <thead><tr><th>Месяц</th><th>Количество</th></tr></thead>
+    <tbody>
+        {% for m in range(1, 13) %}
+        <tr><td>{{ m }} месяц</td><td>{{ dismissed_by_month[m] }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, extract, and_, or_
 from datetime import datetime, date, timedelta
@@ -6,11 +6,58 @@ import os
 import re
 import threading
 import time
+from functools import wraps
 
 app = Flask(__name__)
 app.config.from_object('config.Config')
 
 db = SQLAlchemy(app)
+
+# =====================================================
+# ДЕКОРАТОР ДЛЯ ПРОВЕРКИ ВХОДА
+# =====================================================
+
+def login_required(f):
+    """Декоратор для проверки авторизации"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            flash('Пожалуйста, войдите в систему', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# =====================================================
+# МАРШРУТЫ АВТОРИЗАЦИИ
+# =====================================================
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Страница входа в систему"""
+    if session.get('logged_in'):
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        if username == app.config['ADMIN_USERNAME'] and password == app.config['ADMIN_PASSWORD']:
+            session['logged_in'] = True
+            session['username'] = username
+            session['login_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            flash(f'Добро пожаловать, {username}!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Неверный логин или пароль!', 'danger')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Выход из системы"""
+    session.clear()
+    flash('Вы вышли из системы', 'info')
+    return redirect(url_for('login'))
 
 # =====================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ВАЛИДАЦИИ
@@ -304,8 +351,8 @@ class SickLeave(db.Model):
     end_date = db.Column(db.Date, nullable=False)
     sick_list_number = db.Column(db.String(50), unique=True, nullable=False)
     diagnosis = db.Column(db.String(200))
-    doctor_name = db.Column(db.String(200))  # Добавляем врача
-    hospital_name = db.Column(db.String(200))  # Добавляем название больницы
+    doctor_name = db.Column(db.String(200))
+    hospital_name = db.Column(db.String(200))
     days_count = db.Column(db.Integer)
     order_id = db.Column(db.Integer, db.ForeignKey('orders.id'))
     created_at = db.Column(db.TIMESTAMP, default=datetime.now)
@@ -367,6 +414,7 @@ class DismissedEmployee(db.Model):
 # =====================================================
 
 @app.route('/')
+@login_required
 def index():
     total_employees = Employee.query.filter_by(is_active=True).count()
     total_employees_all = Employee.query.count()
@@ -531,17 +579,15 @@ def index():
 # ==================== СОТРУДНИКИ С ФИЛЬТРАЦИЕЙ ====================
 
 @app.route('/employees')
+@login_required
 def employees():
-    # Получаем параметры фильтрации
     search = request.args.get('search', '').strip()
     department_id = request.args.get('department_id', type=int)
     position_id = request.args.get('position_id', type=int)
-    status = request.args.get('status', 'all')  # all, active, dismissed
+    status = request.args.get('status', 'all')
     
-    # Базовый запрос
     query = Employee.query
     
-    # Фильтр по поиску (ФИО, телефон, email)
     if search:
         query = query.filter(
             db.or_(
@@ -553,13 +599,11 @@ def employees():
             )
         )
     
-    # Фильтр по статусу
     if status == 'active':
         query = query.filter_by(is_active=True)
     elif status == 'dismissed':
         query = query.filter_by(is_active=False)
     
-    # Фильтр по отделу (через назначения)
     if department_id:
         query = query.filter(
             Employee.id.in_(
@@ -569,7 +613,6 @@ def employees():
             )
         )
     
-    # Фильтр по должности (через назначения)
     if position_id:
         query = query.filter(
             Employee.id.in_(
@@ -581,7 +624,6 @@ def employees():
     
     employees_list = query.order_by(Employee.last_name).all()
     
-    # Получаем списки для фильтров
     departments = Department.query.all()
     positions = Position.query.all()
     
@@ -595,6 +637,7 @@ def employees():
                          status=status)
 
 @app.route('/employee/add', methods=['GET', 'POST'])
+@login_required
 def add_employee():
     if request.method == 'POST':
         errors = []
@@ -682,6 +725,7 @@ def add_employee():
     return render_template('employee_form.html', employee=None, form_data=None)
 
 @app.route('/employee/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def edit_employee(id):
     employee = Employee.query.get_or_404(id)
     
@@ -781,6 +825,7 @@ def edit_employee(id):
     return render_template('employee_form.html', employee=employee)
 
 @app.route('/employee/<int:id>/view')
+@login_required
 def view_employee(id):
     employee = Employee.query.get_or_404(id)
     assignments = EmployeePosition.query.filter_by(employee_id=id).all()
@@ -794,6 +839,7 @@ def view_employee(id):
                          sick_leaves=sick_leaves)
 
 @app.route('/employee/<int:id>/dismiss', methods=['POST'])
+@login_required
 def dismiss_employee(id):
     employee = Employee.query.get_or_404(id)
     
@@ -835,6 +881,7 @@ def dismiss_employee(id):
     return redirect(url_for('employees'))
 
 @app.route('/dismissed-employees')
+@login_required
 def dismissed_employees():
     dismissed_list = DismissedEmployee.query.order_by(DismissedEmployee.delete_after_date).all()
     
@@ -846,19 +893,18 @@ def dismissed_employees():
     return render_template('dismissed_employees.html', dismissed=dismissed_list)
 
 @app.route('/restore-dismissed/<int:dismissed_id>', methods=['POST'])
+@login_required
 def restore_dismissed_employee(dismissed_id):
     try:
         dismissed = DismissedEmployee.query.get_or_404(dismissed_id)
         
-        # Восстанавливаем сотрудника со всеми необходимыми полями
-        # Нужно получить полные данные из архива или запросить у пользователя
         employee = Employee(
-            id=dismissed.employee_id,  # Сохраняем тот же ID
+            id=dismissed.employee_id,
             last_name=dismissed.last_name,
             first_name=dismissed.first_name,
             middle_name=dismissed.middle_name,
-            birth_date=None,  # Нужно будет запросить заново
-            gender='M',  # Временно ставим значение по умолчанию
+            birth_date=None,
+            gender='M',
             snils=None,
             inn=None,
             passport_series=None,
@@ -885,6 +931,7 @@ def restore_dismissed_employee(dismissed_id):
 # ==================== ОТДЕЛЫ С ФИЛЬТРАЦИЕЙ ====================
 
 @app.route('/departments')
+@login_required
 def departments():
     search = request.args.get('search', '').strip()
     parent_id = request.args.get('parent_id', type=int)
@@ -904,7 +951,6 @@ def departments():
     
     dept_list = query.all()
     
-    # Для выбора родительского отдела в фильтре
     all_departments = Department.query.all()
     
     return render_template('departments.html', 
@@ -914,6 +960,7 @@ def departments():
                          parent_id=parent_id)
 
 @app.route('/department/add', methods=['GET', 'POST'])
+@login_required
 def add_department():
     if request.method == 'POST':
         try:
@@ -937,6 +984,7 @@ def add_department():
     return render_template('department_form.html', department=None, departments=departments_list, employees=employees_list)
 
 @app.route('/department/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def edit_department(id):
     department = Department.query.get_or_404(id)
     
@@ -959,6 +1007,7 @@ def edit_department(id):
     return render_template('department_form.html', department=department, departments=departments_list, employees=employees_list)
 
 @app.route('/department/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_department(id):
     try:
         department = Department.query.get_or_404(id)
@@ -971,6 +1020,7 @@ def delete_department(id):
     return redirect(url_for('departments'))
 
 @app.route('/department/<int:id>/view')
+@login_required
 def view_department(id):
     department = Department.query.get_or_404(id)
     
@@ -1002,6 +1052,7 @@ def view_department(id):
 # ==================== ДОЛЖНОСТИ С ФИЛЬТРАЦИЕЙ ====================
 
 @app.route('/positions')
+@login_required
 def positions():
     search = request.args.get('search', '').strip()
     category = request.args.get('category', '')
@@ -1029,6 +1080,7 @@ def positions():
                          is_head=is_head)
 
 @app.route('/position/add', methods=['GET', 'POST'])
+@login_required
 def add_position():
     if request.method == 'POST':
         try:
@@ -1051,6 +1103,7 @@ def add_position():
     return render_template('position_form.html', position=None)
 
 @app.route('/position/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def edit_position(id):
     position = Position.query.get_or_404(id)
     
@@ -1072,6 +1125,7 @@ def edit_position(id):
     return render_template('position_form.html', position=position)
 
 @app.route('/position/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_position(id):
     try:
         position = Position.query.get_or_404(id)
@@ -1084,6 +1138,7 @@ def delete_position(id):
     return redirect(url_for('positions'))
 
 @app.route('/position/<int:id>/view')
+@login_required
 def view_position(id):
     position = Position.query.get_or_404(id)
     
@@ -1115,6 +1170,7 @@ def view_position(id):
 # ==================== ШТАТНОЕ РАСПИСАНИЕ С ФИЛЬТРАЦИЕЙ ====================
 
 @app.route('/staffing')
+@login_required
 def staffing():
     search = request.args.get('search', '').strip()
     department_id = request.args.get('department_id', type=int)
@@ -1157,6 +1213,7 @@ def staffing():
                          is_active=is_active)
 
 @app.route('/staffing/add', methods=['GET', 'POST'])
+@login_required
 def add_staffing():
     if request.method == 'POST':
         try:
@@ -1181,6 +1238,7 @@ def add_staffing():
     return render_template('staffing_form.html', staffing=None, departments=departments, positions=positions)
 
 @app.route('/staffing/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def edit_staffing(id):
     staff = Staffing.query.get_or_404(id)
     
@@ -1204,6 +1262,7 @@ def edit_staffing(id):
     return render_template('staffing_form.html', staffing=staff, departments=departments, positions=positions)
 
 @app.route('/staffing/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_staffing(id):
     try:
         staff = Staffing.query.get_or_404(id)
@@ -1216,6 +1275,7 @@ def delete_staffing(id):
     return redirect(url_for('staffing'))
 
 @app.route('/assignment/add/<int:employee_id>', methods=['GET', 'POST'])
+@login_required
 def add_assignment(employee_id):
     employee = Employee.query.get_or_404(employee_id)
     
@@ -1259,6 +1319,7 @@ def add_assignment(employee_id):
     return render_template('assignment_form.html', employee=employee, staffing_list=active_staffing)
 
 @app.route('/assignment/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_assignment(id):
     try:
         assignment = EmployeePosition.query.get_or_404(id)
@@ -1292,6 +1353,7 @@ def delete_assignment(id):
         return redirect(url_for('view_employee', id=employee_id))
 
 @app.route('/vacation/add/<int:employee_id>', methods=['GET', 'POST'])
+@login_required
 def add_vacation(employee_id):
     employee = Employee.query.get_or_404(employee_id)
     
@@ -1320,6 +1382,7 @@ def add_vacation(employee_id):
     return render_template('vacation_form.html', employee=employee)
 
 @app.route('/vacation/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_vacation(id):
     try:
         vacation = Vacation.query.get_or_404(id)
@@ -1333,6 +1396,7 @@ def delete_vacation(id):
     return redirect(url_for('view_employee', id=employee_id))
 
 @app.route('/employee/<int:employee_id>/set_manager/<int:department_id>', methods=['POST'])
+@login_required
 def set_department_manager(employee_id, department_id):
     try:
         employee = Employee.query.get_or_404(employee_id)
@@ -1349,6 +1413,7 @@ def set_department_manager(employee_id, department_id):
     return redirect(request.referrer or url_for('departments'))
 
 @app.route('/department/<int:department_id>/remove_manager', methods=['POST'])
+@login_required
 def remove_department_manager(department_id):
     try:
         department = Department.query.get_or_404(department_id)
@@ -1363,6 +1428,7 @@ def remove_department_manager(department_id):
     return redirect(url_for('departments'))
 
 @app.route('/head-positions')
+@login_required
 def head_positions():
     staffing_list = Staffing.query.filter_by(is_active=True).all()
     
@@ -1383,8 +1449,8 @@ def head_positions():
 # ==================== БОЛЬНИЧНЫЕ ====================
 
 @app.route('/sick-leaves')
+@login_required
 def sick_leaves():
-    """Список всех больничных"""
     from datetime import date
     
     search = request.args.get('search', '').strip()
@@ -1409,7 +1475,6 @@ def sick_leaves():
     
     sick_leaves_list = query.order_by(SickLeave.start_date.desc()).all()
     
-    # ВАЖНО: передаём today в шаблон
     return render_template('sick_leaves.html', 
                          sick_leaves=sick_leaves_list, 
                          search=search, 
@@ -1417,8 +1482,8 @@ def sick_leaves():
                          today=date.today())
 
 @app.route('/sick-leave/add/<int:employee_id>', methods=['GET', 'POST'])
+@login_required
 def add_sick_leave(employee_id):
-    """Добавление больничного листа"""
     employee = Employee.query.get_or_404(employee_id)
     
     if request.method == 'POST':
@@ -1432,7 +1497,6 @@ def add_sick_leave(employee_id):
             
             days_count = (end_date - start_date).days + 1
             
-            # Проверяем уникальность номера больничного
             existing = SickLeave.query.filter_by(sick_list_number=request.form['sick_list_number']).first()
             if existing:
                 flash('Больничный лист с таким номером уже существует!', 'danger')
@@ -1461,8 +1525,8 @@ def add_sick_leave(employee_id):
     return render_template('sick_leave_form.html', employee=employee)
 
 @app.route('/sick-leave/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def edit_sick_leave(id):
-    """Редактирование больничного листа"""
     sick_leave = SickLeave.query.get_or_404(id)
     employee_id = sick_leave.employee_id
     
@@ -1477,7 +1541,6 @@ def edit_sick_leave(id):
             
             days_count = (end_date - start_date).days + 1
             
-            # Проверяем уникальность номера (исключая текущий)
             existing = SickLeave.query.filter(
                 SickLeave.sick_list_number == request.form['sick_list_number'],
                 SickLeave.id != id
@@ -1505,8 +1568,8 @@ def edit_sick_leave(id):
     return render_template('sick_leave_form.html', sick_leave=sick_leave, employee=sick_leave.employee)
 
 @app.route('/sick-leave/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_sick_leave(id):
-    """Удаление больничного листа"""
     try:
         sick_leave = SickLeave.query.get_or_404(id)
         employee_id = sick_leave.employee_id
@@ -1520,8 +1583,8 @@ def delete_sick_leave(id):
     return redirect(url_for('view_employee', id=employee_id))
 
 @app.route('/sick-leave/close/<int:id>', methods=['POST'])
+@login_required
 def close_sick_leave(id):
-    """Закрыть больничный лист (установить дату окончания сегодня)"""
     try:
         sick_leave = SickLeave.query.get_or_404(id)
         sick_leave.end_date = date.today()
@@ -1535,14 +1598,12 @@ def close_sick_leave(id):
     return redirect(url_for('view_employee', id=sick_leave.employee_id))
 
 @app.route('/sick-leave/stats')
+@login_required
 def sick_leave_stats():
-    """Статистика по больничным"""
     from sqlalchemy import extract, func
     
-    # Статистика за текущий год
     current_year = datetime.now().year
     
-    # Количество больничных по месяцам
     monthly_stats = db.session.query(
         extract('month', SickLeave.start_date).label('month'),
         func.count(SickLeave.id).label('count'),
@@ -1551,7 +1612,6 @@ def sick_leave_stats():
         extract('year', SickLeave.start_date) == current_year
     ).group_by('month').all()
     
-    # Топ 5 сотрудников по больничным
     top_employees = db.session.query(
         Employee.id,
         Employee.last_name,
@@ -1560,17 +1620,14 @@ def sick_leave_stats():
         func.sum(SickLeave.days_count).label('total_days')
     ).join(SickLeave).group_by(Employee.id).order_by(func.sum(SickLeave.days_count).desc()).limit(5).all()
     
-    # Всего больничных в этом году
     total_sick_leaves = SickLeave.query.filter(
         extract('year', SickLeave.start_date) == current_year
     ).count()
     
-    # Всего дней на больничном
     total_days = db.session.query(func.sum(SickLeave.days_count)).filter(
         extract('year', SickLeave.start_date) == current_year
     ).scalar() or 0
     
-    # Средняя продолжительность больничного
     avg_days = db.session.query(func.avg(SickLeave.days_count)).filter(
         extract('year', SickLeave.start_date) == current_year
     ).scalar() or 0
@@ -1588,13 +1645,13 @@ def sick_leave_stats():
 # =====================================================
 
 @app.route('/reports')
+@login_required
 def reports_index():
-    """Главная страница отчётов"""
     return render_template('reports/index.html')
 
 @app.route('/reports/employees-list')
+@login_required
 def report_employees_list():
-    """Отчёт: Список всех сотрудников"""
     department_id = request.args.get('department_id', type=int)
     status = request.args.get('status', 'all')
     
@@ -1625,8 +1682,8 @@ def report_employees_list():
                          status=status)
 
 @app.route('/reports/salary-report')
+@login_required
 def report_salary():
-    """Отчёт: Зарплатная ведомость"""
     department_id = request.args.get('department_id', type=int)
     
     query = Staffing.query.filter_by(is_active=True)
@@ -1636,12 +1693,10 @@ def report_salary():
     
     staffing = query.all()
     
-    # Статистика
     total_salary = sum(float(s.salary * s.rate) for s in staffing)
     total_employees = EmployeePosition.query.filter(EmployeePosition.end_date == None).count()
     avg_salary = total_salary / total_employees if total_employees > 0 else 0
     
-    # По отделам
     dept_salary = {}
     for s in staffing:
         dept_name = s.department.name
@@ -1650,7 +1705,6 @@ def report_salary():
         dept_salary[dept_name]['salary'] += float(s.salary * s.rate)
         dept_salary[dept_name]['rate'] += float(s.rate)
     
-    # По должностям
     pos_salary = {}
     for s in staffing:
         pos_name = s.position.name
@@ -1673,8 +1727,8 @@ def report_salary():
                          pos_salary=pos_salary)
 
 @app.route('/reports/birthday-report')
+@login_required
 def report_birthdays():
-    """Отчёт: Дни рождения по месяцам"""
     month = request.args.get('month', type=int)
     current_month = datetime.now().month
     current_year = datetime.now().year
@@ -1690,7 +1744,6 @@ def report_birthdays():
     employees = query.order_by(extract('month', Employee.birth_date), 
                                 extract('day', Employee.birth_date)).all()
     
-    # Группировка по месяцам
     birthdays_by_month = {i: [] for i in range(1, 13)}
     for emp in employees:
         if emp.birth_date:
@@ -1706,8 +1759,8 @@ def report_birthdays():
                          title=title)
 
 @app.route('/reports/vacation-report')
+@login_required
 def report_vacations():
-    """Отчёт: Отпуска сотрудников"""
     year = request.args.get('year', type=int, default=datetime.now().year)
     department_id = request.args.get('department_id', type=int)
     
@@ -1720,12 +1773,10 @@ def report_vacations():
     
     vacations = query.order_by(Vacation.start_date).all()
     
-    # Статистика
     total_vacations = len(vacations)
     total_days = sum(v.days_count for v in vacations)
     avg_days = total_days / total_vacations if total_vacations > 0 else 0
     
-    # По типам отпусков
     by_type = {}
     for v in vacations:
         if v.type not in by_type:
@@ -1748,8 +1799,8 @@ def report_vacations():
                          by_type=by_type)
 
 @app.route('/reports/sick-leave-report')
+@login_required
 def report_sick_leaves():
-    """Отчёт: Больничные листы"""
     year = request.args.get('year', type=int, default=datetime.now().year)
     department_id = request.args.get('department_id', type=int)
     
@@ -1762,19 +1813,16 @@ def report_sick_leaves():
     
     sick_leaves = query.order_by(SickLeave.start_date).all()
     
-    # Статистика
     total_sick = len(sick_leaves)
     total_days = sum(s.days_count for s in sick_leaves)
     avg_days = total_days / total_sick if total_sick > 0 else 0
     
-    # По месяцам
     by_month = {i: {'count': 0, 'days': 0} for i in range(1, 13)}
     for sl in sick_leaves:
         m = sl.start_date.month
         by_month[m]['count'] += 1
         by_month[m]['days'] += sl.days_count
     
-    # Топ диагнозов
     diagnosis_stats = db.session.query(
         SickLeave.diagnosis,
         func.count(SickLeave.id).label('count'),
@@ -1798,8 +1846,8 @@ def report_sick_leaves():
                          diagnosis_stats=diagnosis_stats)
 
 @app.route('/reports/staffing-report')
+@login_required
 def report_staffing():
-    """Отчёт: Штатное расписание и занятость"""
     department_id = request.args.get('department_id', type=int)
     
     query = Staffing.query.filter_by(is_active=True)
@@ -1809,7 +1857,6 @@ def report_staffing():
     
     staffing = query.all()
     
-    # Статистика
     total_positions = len(staffing)
     total_rate = sum(float(s.rate) for s in staffing)
     
@@ -1834,20 +1881,17 @@ def report_staffing():
                          occupied_rate=occupied_rate)
 
 @app.route('/reports/turnover-report')
+@login_required
 def report_turnover():
-    """Отчёт: Текучесть кадров"""
     year = request.args.get('year', type=int, default=datetime.now().year)
     
-    # Принятые за год
     hired = Employee.query.filter(extract('year', Employee.hire_date) == year).count()
     
-    # Уволенные за год
     dismissed = Employee.query.filter(
         extract('year', Employee.dismissal_date) == year,
         Employee.is_active == False
     ).count()
     
-    # Всего сотрудников на начало года
     start_date = date(year, 1, 1)
     employees_start = Employee.query.filter(
         Employee.hire_date < start_date,
@@ -1857,11 +1901,9 @@ def report_turnover():
         )
     ).count()
     
-    # Текучесть = (уволенные / среднее количество) * 100
     avg_employees = (employees_start + (employees_start + hired - dismissed)) / 2
     turnover_rate = (dismissed / avg_employees * 100) if avg_employees > 0 else 0
     
-    # По месяцам
     months = range(1, 13)
     hired_by_month = {}
     dismissed_by_month = {}
@@ -1890,11 +1932,10 @@ def report_turnover():
                          dismissed_by_month=dismissed_by_month)
 
 @app.route('/reports/age-report')
+@login_required
 def report_age():
-    """Отчёт: Возрастной состав"""
     employees = Employee.query.filter_by(is_active=True).all()
     
-    # Возрастные группы
     age_groups = {
         '18-25': 0, '26-35': 0, '36-45': 0, '46-55': 0, '56+': 0
     }
@@ -1917,10 +1958,8 @@ def report_age():
                 elif age >= 56:
                     age_groups['56+'] += 1
     
-    # Средний возраст
     avg_age = sum(age_list) / len(age_list) if age_list else 0
     
-    # По отделам
     dept_age = {}
     for dept in Department.query.all():
         dept_employees = []
@@ -1937,6 +1976,251 @@ def report_age():
                          avg_age=avg_age,
                          total_employees=len(employees),
                          dept_age=dept_age)
+
+@app.route('/reports/print/<report_name>')
+@login_required
+def print_report(report_name):
+    from datetime import date
+    
+    department_id = request.args.get('department_id')
+    if department_id:
+        department_id = int(department_id)
+    
+    status = request.args.get('status', 'all')
+    year = request.args.get('year')
+    if year:
+        year = int(year)
+    
+    month = request.args.get('month')
+    if month:
+        month = int(month)
+    
+    today_date = date.today()
+    
+    if report_name == 'employees':
+        query = Employee.query
+        if department_id:
+            query = query.filter(
+                Employee.id.in_(
+                    db.session.query(EmployeePosition.employee_id)
+                    .join(Staffing)
+                    .filter(Staffing.department_id == department_id)
+                )
+            )
+        if status == 'active':
+            query = query.filter_by(is_active=True)
+        elif status == 'dismissed':
+            query = query.filter_by(is_active=False)
+        
+        employees = query.order_by(Employee.last_name).all()
+        department_name = Department.query.get(department_id).name if department_id else 'Все'
+        status_name = {'active': 'Активные', 'dismissed': 'Уволенные', 'all': 'Все'}.get(status, 'Все')
+        
+        return render_template('reports/print_employees.html',
+                             title='Список сотрудников',
+                             employees=employees,
+                             filters=f"Отдел: {department_name}, Статус: {status_name}",
+                             today=today_date)
+    
+    elif report_name == 'salary':
+        query = Staffing.query.filter_by(is_active=True)
+        if department_id:
+            query = query.filter_by(department_id=department_id)
+        
+        staffing = query.all()
+        
+        total_salary = sum(float(s.salary * s.rate) for s in staffing)
+        total_employees = EmployeePosition.query.filter(EmployeePosition.end_date == None).count()
+        avg_salary = total_salary / total_employees if total_employees > 0 else 0
+        
+        dept_salary = {}
+        for s in staffing:
+            dept_name = s.department.name
+            if dept_name not in dept_salary:
+                dept_salary[dept_name] = {'salary': 0, 'employees': 0}
+            dept_salary[dept_name]['salary'] += float(s.salary * s.rate)
+        
+        department_name = Department.query.get(department_id).name if department_id else 'Все отделы'
+        
+        return render_template('reports/print_salary.html',
+                             title='Зарплатная ведомость',
+                             staffing=staffing,
+                             total_salary=total_salary,
+                             avg_salary=avg_salary,
+                             total_employees=total_employees,
+                             dept_salary=dept_salary,
+                             filters=f"Отдел: {department_name}",
+                             today=today_date)
+    
+    elif report_name == 'birthdays':
+        query = Employee.query.filter(Employee.is_active == True, Employee.birth_date.isnot(None))
+        if month:
+            query = query.filter(extract('month', Employee.birth_date) == month)
+        
+        employees = query.order_by(extract('month', Employee.birth_date), 
+                                    extract('day', Employee.birth_date)).all()
+        
+        month_name = f"{month} месяц" if month else 'Все месяцы'
+        
+        return render_template('reports/print_birthdays.html',
+                             title='Дни рождения сотрудников',
+                             employees=employees,
+                             filters=f"Период: {month_name}",
+                             today=today_date)
+    
+    elif report_name == 'vacations':
+        if not year:
+            year = datetime.now().year
+        
+        query = Vacation.query.filter(extract('year', Vacation.start_date) == year)
+        if department_id:
+            query = query.join(Employee).join(EmployeePosition).join(Staffing).filter(
+                Staffing.department_id == department_id
+            )
+        
+        vacations = query.order_by(Vacation.start_date).all()
+        
+        total_vacations = len(vacations)
+        total_days = sum(v.days_count for v in vacations)
+        
+        department_name = Department.query.get(department_id).name if department_id else 'Все отделы'
+        
+        return render_template('reports/print_vacations.html',
+                             title='Отчёт по отпускам',
+                             vacations=vacations,
+                             year=year,
+                             total_vacations=total_vacations,
+                             total_days=total_days,
+                             filters=f"Год: {year}, Отдел: {department_name}",
+                             today=today_date)
+    
+    elif report_name == 'sick-leaves':
+        if not year:
+            year = datetime.now().year
+        
+        query = SickLeave.query.filter(extract('year', SickLeave.start_date) == year)
+        if department_id:
+            query = query.join(Employee).join(EmployeePosition).join(Staffing).filter(
+                Staffing.department_id == department_id
+            )
+        
+        sick_leaves = query.order_by(SickLeave.start_date).all()
+        
+        total_sick = len(sick_leaves)
+        total_days = sum(s.days_count for s in sick_leaves)
+        
+        by_month = {i: {'count': 0, 'days': 0} for i in range(1, 13)}
+        for sl in sick_leaves:
+            m = sl.start_date.month
+            by_month[m]['count'] += 1
+            by_month[m]['days'] += sl.days_count
+        
+        department_name = Department.query.get(department_id).name if department_id else 'Все отделы'
+        
+        return render_template('reports/print_sick_leaves.html',
+                             title='Отчёт по больничным листам',
+                             sick_leaves=sick_leaves,
+                             year=year,
+                             total_sick=total_sick,
+                             total_days=total_days,
+                             by_month=by_month,
+                             filters=f"Год: {year}, Отдел: {department_name}",
+                             today=today_date)
+    
+    elif report_name == 'staffing':
+        query = Staffing.query.filter_by(is_active=True)
+        if department_id:
+            query = query.filter_by(department_id=department_id)
+        
+        staffing = query.all()
+        
+        total_positions = len(staffing)
+        total_rate = sum(float(s.rate) for s in staffing)
+        
+        occupied_positions = 0
+        for s in staffing:
+            if len([a for a in s.assignments if a.end_date is None]) > 0:
+                occupied_positions += 1
+        
+        department_name = Department.query.get(department_id).name if department_id else 'Все отделы'
+        
+        return render_template('reports/print_staffing.html',
+                             title='Штатное расписание',
+                             staffing=staffing,
+                             total_positions=total_positions,
+                             total_rate=total_rate,
+                             occupied_positions=occupied_positions,
+                             filters=f"Отдел: {department_name}",
+                             today=today_date)
+    
+    elif report_name == 'turnover':
+        if not year:
+            year = datetime.now().year
+        
+        hired = Employee.query.filter(extract('year', Employee.hire_date) == year).count()
+        dismissed = Employee.query.filter(
+            extract('year', Employee.dismissal_date) == year,
+            Employee.is_active == False
+        ).count()
+        
+        hired_by_month = {}
+        dismissed_by_month = {}
+        for m in range(1, 13):
+            hired_by_month[m] = Employee.query.filter(
+                extract('year', Employee.hire_date) == year,
+                extract('month', Employee.hire_date) == m
+            ).count()
+            dismissed_by_month[m] = Employee.query.filter(
+                extract('year', Employee.dismissal_date) == year,
+                extract('month', Employee.dismissal_date) == m,
+                Employee.is_active == False
+            ).count()
+        
+        return render_template('reports/print_turnover.html',
+                             title='Текучесть кадров',
+                             year=year,
+                             hired=hired,
+                             dismissed=dismissed,
+                             hired_by_month=hired_by_month,
+                             dismissed_by_month=dismissed_by_month,
+                             filters=f"Год: {year}",
+                             today=today_date)
+    
+    elif report_name == 'age':
+        employees = Employee.query.filter_by(is_active=True).all()
+        
+        age_groups = {'18-25': 0, '26-35': 0, '36-45': 0, '46-55': 0, '56+': 0}
+        age_list = []
+        
+        for emp in employees:
+            if emp.birth_date:
+                age = emp.age()
+                if age:
+                    age_list.append(age)
+                    if 18 <= age <= 25:
+                        age_groups['18-25'] += 1
+                    elif 26 <= age <= 35:
+                        age_groups['26-35'] += 1
+                    elif 36 <= age <= 45:
+                        age_groups['36-45'] += 1
+                    elif 46 <= age <= 55:
+                        age_groups['46-55'] += 1
+                    elif age >= 56:
+                        age_groups['56+'] += 1
+        
+        avg_age = sum(age_list) / len(age_list) if age_list else 0
+        
+        return render_template('reports/print_age.html',
+                             title='Возрастной состав персонала',
+                             employees=employees,
+                             age_groups=age_groups,
+                             avg_age=avg_age,
+                             total_employees=len(employees),
+                             filters="Активные сотрудники",
+                             today=today_date)
+    
+    return redirect(url_for('reports_index'))
+
 # =====================================================
 # ЗАПУСК ПЛАНИРОВЩИКА И ПРИЛОЖЕНИЯ
 # =====================================================

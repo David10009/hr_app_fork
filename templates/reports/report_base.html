@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - HR Система</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Дополнительные стили только для печати */
+        @media print {
+            @page {
+                size: A4;
+                margin: 2cm;
+            }
+            
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Шапка отчёта -->
+        <div class="report-header">
+            <div class="report-title">{{ title }}</div>
+            <div class="report-subtitle">{{ company_name or 'HR Система управления персоналом' }}</div>
+            <div class="report-date">Дата формирования: {{ today.strftime('%d.%m.%Y') }}</div>
+            {% if filters %}
+            <div class="report-date">Параметры отчёта: {{ filters }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Основное содержание -->
+        {% block content %}{% endblock %}
+        
+        <!-- Подвал отчёта -->
+        <div class="report-footer">
+            <p>© {{ today.year }} HR Система. Все права защищены.</p>
+            <p>Документ сформирован автоматически {{ today.strftime('%d.%m.%Y в %H:%M') }}</p>
+        </div>
+    </div>
+</body>
+</html>

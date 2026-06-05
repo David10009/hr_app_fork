@@ -1,0 +1,59 @@
+{% extends "reports/report_base.html" %}
+
+{% block content %}
+<h2>Итоговые показатели</h2>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ "{:,.2f}".format(total_salary) }} ₽</div>
+        <div class="stat-label">Общий фонд оплаты труда</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ total_employees }}</div>
+        <div class="stat-label">Количество сотрудников</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ "{:,.2f}".format(avg_salary) }} ₽</div>
+        <div class="stat-label">Средняя заработная плата</div>
+    </div>
+</div>
+
+<h2>Фонд оплаты труда по отделам</h2>
+<table>
+    <thead>
+        <tr><th>Отдел</th><th>ФОТ (месяц)</th><th>Доля</th></tr>
+    </thead>
+    <tbody>
+        {% for dept_name, data in dept_salary.items() %}
+        <tr>
+            <td>{{ dept_name }}</td>
+            <td>{{ "{:,.2f}".format(data.salary) }} ₽</td>
+            <td>{{ "%.1f"|format(data.salary / total_salary * 100) }}%</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Детализация штатного расписания</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Отдел</th>
+            <th>Должность</th>
+            <th>Ставка</th>
+            <th>Оклад</th>
+            <th>Итого</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in staffing %}
+        <tr>
+            <td>{{ s.department.name }}</td>
+            <td>{{ s.position.name }}</td>
+            <td>{{ s.rate }}</td>
+            <td>{{ "{:,.2f}".format(s.salary) }} ₽</td>
+            <td>{{ "{:,.2f}".format(s.salary * s.rate) }} ₽</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

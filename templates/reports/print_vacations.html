@@ -1,0 +1,36 @@
+{% extends "reports/report_base.html" %}
+
+{% block content %}
+<h2>Статистика отпусков за {{ year }} год</h2>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ total_vacations }}</div>
+        <div class="stat-label">Всего отпусков</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ total_days }}</div>
+        <div class="stat-label">Всего дней</div>
+    </div>
+</div>
+
+<h2>Список отпусков</h2>
+<table>
+    <thead><tr><th>Сотрудник</th><th>Отдел</th><th>Начало</th><th>Конец</th><th>Дней</th><th>Тип</th><th>Статус</th></tr></thead>
+    <tbody>
+        {% for v in vacations %}
+        <tr>
+            <td>{{ v.employee.full_name() }}</td>
+            <td>
+                {% set main = v.employee.assignments|selectattr('is_main')|selectattr('end_date', 'none')|first %}
+                {{ main.staffing.department.name if main and main.staffing else '-' }}
+            </td>
+            <td>{{ v.start_date.strftime('%d.%m.%Y') }}</td>
+            <td>{{ v.end_date.strftime('%d.%m.%Y') }}</td>
+            <td>{{ v.days_count }}</td>
+            <td>{{ v.type }}</td>
+            <td>{{ v.status }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

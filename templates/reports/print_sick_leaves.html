@@ -1,0 +1,50 @@
+{% extends "reports/report_base.html" %}
+
+{% block content %}
+<h2>Статистика больничных за {{ year }} год</h2>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ total_sick }}</div>
+        <div class="stat-label">Всего больничных</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ total_days }}</div>
+        <div class="stat-label">Всего дней</div>
+    </div>
+</div>
+
+<h2>Больничные по месяцам</h2>
+<table>
+    <thead><tr><th>Месяц</th><th>Количество</th><th>Дней</th></tr></thead>
+    <tbody>
+        {% for m in range(1, 13) %}
+        <tr>
+            <td>{{ m }} месяц</td>
+            <td>{{ by_month[m]['count'] }}</td>
+            <td>{{ by_month[m]['days'] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Список больничных</h2>
+<table>
+    <thead><tr><th>Сотрудник</th><th>Отдел</th><th>№ листа</th><th>Диагноз</th><th>Период</th><th>Дней</th><th>Врач</th></tr></thead>
+    <tbody>
+        {% for sl in sick_leaves %}
+        <tr>
+            <td>{{ sl.employee.full_name() }}</td>
+            <td>
+                {% set main = sl.employee.assignments|selectattr('is_main')|selectattr('end_date', 'none')|first %}
+                {{ main.staffing.department.name if main and main.staffing else '-' }}
+            </td>
+            <td>{{ sl.sick_list_number }}</td>
+            <td>{{ sl.diagnosis or '-' }}</td>
+            <td>{{ sl.start_date.strftime('%d.%m.%Y') }} - {{ sl.end_date.strftime('%d.%m.%Y') }}</td>
+            <td>{{ sl.days_count }}</td>
+            <td>{{ sl.doctor_name or '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
