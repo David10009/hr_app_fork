@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёт: Дни рождения{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        🎂 Отчёт: Дни рождения сотрудников
+        <button onclick="window.print()" class="btn btn-primary btn-sm" style="float: right;">🖨️ Печать</button>
+    </div>
+    
+    <!-- Фильтры -->
+    <div style="padding: 1rem; background: #f8f9fb; border-bottom: 1px solid #e8ecef;">
+        <form method="GET" style="display: flex; gap: 10px; align-items: flex-end;">
+            <div>
+                <label>📅 Месяц</label>
+                <select name="month">
+                    <option value="">Все месяцы</option>
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if selected_month == m %}selected{% endif %}>{{ m }} месяц</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-primary">🔍 Применить</button>
+                <a href="{{ url_for('report_birthdays') }}" class="btn btn-secondary">🔄 Сбросить</a>
+            </div>
+        </form>
+    </div>
+    
+    <div class="info-grid">
+        {% for month in range(1, 13) %}
+            {% if birthdays_by_month[month] %}
+            <div class="card">
+                <div class="card-header">
+                    📅 {{ month }} месяц ({{ birthdays_by_month[month]|length }} чел.)
+                </div>
+                <table class="info-table">
+                    {% for emp in birthdays_by_month[month]|sort(attribute='birth_date') %}
+                    <tr>
+                        <td><strong>{{ emp.full_name() }}</strong></td>
+                        <td>{{ emp.birth_date.strftime('%d.%m') }}</td>
+                        <td>
+                            {% set main = emp.assignments|selectattr('is_main')|selectattr('end_date', 'none')|first %}
+                            {{ main.staffing.position.name if main and main.staffing else '-' }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    
+    {% if not employees %}
+    <p style="padding: 1.25rem; text-align: center; color: #8a9aa8;">Нет данных о днях рождения</p>
+    {% endif %}
+</div>
+{% endblock %}

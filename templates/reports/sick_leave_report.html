@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёт: Больничные листы{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        🤒 Отчёт: Больничные листы
+        <button onclick="window.print()" class="btn btn-primary btn-sm" style="float: right;">🖨️ Печать</button>
+    </div>
+    
+    <!-- Фильтры -->
+    <div style="padding: 1rem; background: #f8f9fb; border-bottom: 1px solid #e8ecef;">
+        <form method="GET" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+            <div>
+                <label>📅 Год</label>
+                <select name="year">
+                    {% for y in years %}
+                    <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>🏢 Отдел</label>
+                <select name="department_id">
+                    <option value="">Все отделы</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}" {% if department_id == dept.id %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-primary">🔍 Применить</button>
+                <a href="{{ url_for('report_sick_leaves') }}" class="btn btn-secondary">🔄 Сбросить</a>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Статистика -->
+    <div class="stats-grid" style="padding: 1rem;">
+        <div class="stat-card">
+            <div class="stat-number">{{ total_sick }}</div>
+            <div class="stat-label">Всего больничных</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ total_days }}</div>
+            <div class="stat-label">Всего дней</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format(avg_days) }}</div>
+            <div class="stat-label">Средняя длительность</div>
+        </div>
+    </div>
+    
+    <div class="info-grid">
+        <!-- По месяцам -->
+        <div class="card">
+            <div class="card-header">📊 Больничные по месяцам</div>
+            {% for m in range(1, 13) %}
+            <div style="margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>{{ m }} месяц</span>
+                    <span>{{ by_month[m]['days'] }} дней ({{ by_month[m]['count'] }} больничных)</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ (by_month[m]['days'] / total_days * 100) if total_days > 0 else 0 }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Топ диагнозов -->
+        <div class="card">
+            <div class="card-header">🏥 Частые диагнозы</div>
+            <table class="info-table">
+                {% for d in diagnosis_stats %}
+                <tr>
+                    <td><strong>{{ d.diagnosis or 'Не указан' }}</strong></td>
+                    <td>{{ d.count }} случаев</td>
+                    <td>{{ d.total_days }} дней</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    
+    <!-- Детализация -->
+    <div class="card-header">📋 Список больничных</div>
+    <div style="overflow-x: auto;">
+        <table class="info-table">
+            <thead>
+                <tr>
+                    <th>Сотрудник</th>
+                    <th>Отдел</th>
+                    <th>№ листа</th>
+                    <th>Диагноз</th>
+                    <th>Период</th>
+                    <th>Дней</th>
+                    <th>Врач</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sl in sick_leaves %}
+                <tr>
+                    <td>{{ sl.employee.full_name() }}</td>
+                    <td>
+                        {% set main = sl.employee.assignments|selectattr('is_main')|selectattr('end_date', 'none')|first %}
+                        {{ main.staffing.department.name if main and main.staffing else '-' }}
+                    </td>
+                    <td>{{ sl.sick_list_number }}</td>
+                    <td>{{ sl.diagnosis or '-' }}</td>
+                    <td>{{ sl.start_date.strftime('%d.%m.%Y') }} - {{ sl.end_date.strftime('%d.%m.%Y') }}</td>
+                    <td>{{ sl.days_count }}</td>
+                    <td>{{ sl.doctor_name or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

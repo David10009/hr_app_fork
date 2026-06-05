@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёт: Зарплатная ведомость{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        💰 Отчёт: Зарплатная ведомость
+        <button onclick="window.print()" class="btn btn-primary btn-sm" style="float: right;">🖨️ Печать</button>
+    </div>
+    
+    <!-- Фильтры -->
+    <div style="padding: 1rem; background: #f8f9fb; border-bottom: 1px solid #e8ecef;">
+        <form method="GET" style="display: flex; gap: 10px; align-items: flex-end;">
+            <div>
+                <label>🏢 Отдел</label>
+                <select name="department_id">
+                    <option value="">Все отделы</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}" {% if department_id == dept.id %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-primary">🔍 Применить</button>
+                <a href="{{ url_for('report_salary') }}" class="btn btn-secondary">🔄 Сбросить</a>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Итоговые показатели -->
+    <div class="stats-grid" style="padding: 1rem;">
+        <div class="stat-card">
+            <div class="stat-number">{{ "{:,.2f}".format(total_salary) }} ₽</div>
+            <div class="stat-label">Общий ФОТ</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ total_employees }}</div>
+            <div class="stat-label">Сотрудников</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "{:,.2f}".format(avg_salary) }} ₽</div>
+            <div class="stat-label">Средняя зарплата</div>
+        </div>
+    </div>
+    
+    <div class="info-grid">
+        <!-- По отделам -->
+        <div class="card">
+            <div class="card-header">🏢 ФОТ по отделам</div>
+            <table class="info-table">
+                {% for dept_name, data in dept_salary.items() %}
+                <tr>
+                    <td><strong>{{ dept_name }}</strong></td>
+                    <td>{{ "{:,.2f}".format(data.salary) }} ₽</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <!-- По должностям -->
+        <div class="card">
+            <div class="card-header">💼 Средняя зарплата по должностям</div>
+            <table class="info-table">
+                {% for pos_name, data in pos_salary.items() %}
+                <tr>
+                    <td><strong>{{ pos_name }}</strong></td>
+                    <td>{{ "{:,.2f}".format(data.avg) }} ₽</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    
+    <!-- Детализация -->
+    <div class="card-header">📋 Детализация штатного расписания</div>
+    <div style="overflow-x: auto;">
+        <table class="info-table">
+            <thead>
+                <tr><th>Отдел</th><th>Должность</th><th>Ставка</th><th>Оклад</th><th>Итого</th></tr>
+            </thead>
+            <tbody>
+                {% for s in staffing %}
+                <tr>
+                    <td>{{ s.department.name }}</td>
+                    <td>{{ s.position.name }}</td>
+                    <td>{{ s.rate }}</td>
+                    <td>{{ "{:,.2f}".format(s.salary) }} ₽</td>
+                    <td>{{ "{:,.2f}".format(s.salary * s.rate) }} ₽</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

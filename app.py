@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, extract, and_, or_
 from datetime import datetime, date, timedelta
 import os
 import re
@@ -1582,6 +1583,360 @@ def sick_leave_stats():
                          avg_days=avg_days,
                          current_year=current_year)
 
+# =====================================================
+# ОТЧЁТЫ
+# =====================================================
+
+@app.route('/reports')
+def reports_index():
+    """Главная страница отчётов"""
+    return render_template('reports/index.html')
+
+@app.route('/reports/employees-list')
+def report_employees_list():
+    """Отчёт: Список всех сотрудников"""
+    department_id = request.args.get('department_id', type=int)
+    status = request.args.get('status', 'all')
+    
+    query = Employee.query
+    
+    if department_id:
+        query = query.filter(
+            Employee.id.in_(
+                db.session.query(EmployeePosition.employee_id)
+                .join(Staffing)
+                .filter(Staffing.department_id == department_id)
+            )
+        )
+    
+    if status == 'active':
+        query = query.filter_by(is_active=True)
+    elif status == 'dismissed':
+        query = query.filter_by(is_active=False)
+    
+    employees = query.order_by(Employee.last_name).all()
+    
+    departments = Department.query.all()
+    
+    return render_template('reports/employees_list.html', 
+                         employees=employees, 
+                         departments=departments,
+                         department_id=department_id,
+                         status=status)
+
+@app.route('/reports/salary-report')
+def report_salary():
+    """Отчёт: Зарплатная ведомость"""
+    department_id = request.args.get('department_id', type=int)
+    
+    query = Staffing.query.filter_by(is_active=True)
+    
+    if department_id:
+        query = query.filter_by(department_id=department_id)
+    
+    staffing = query.all()
+    
+    # Статистика
+    total_salary = sum(float(s.salary * s.rate) for s in staffing)
+    total_employees = EmployeePosition.query.filter(EmployeePosition.end_date == None).count()
+    avg_salary = total_salary / total_employees if total_employees > 0 else 0
+    
+    # По отделам
+    dept_salary = {}
+    for s in staffing:
+        dept_name = s.department.name
+        if dept_name not in dept_salary:
+            dept_salary[dept_name] = {'salary': 0, 'employees': 0, 'rate': 0}
+        dept_salary[dept_name]['salary'] += float(s.salary * s.rate)
+        dept_salary[dept_name]['rate'] += float(s.rate)
+    
+    # По должностям
+    pos_salary = {}
+    for s in staffing:
+        pos_name = s.position.name
+        if pos_name not in pos_salary:
+            pos_salary[pos_name] = {'salary': 0, 'employees': 0, 'avg': 0, 'count': 0}
+        pos_salary[pos_name]['salary'] += float(s.salary * s.rate)
+        pos_salary[pos_name]['count'] += 1
+        pos_salary[pos_name]['avg'] = pos_salary[pos_name]['salary'] / pos_salary[pos_name]['count']
+    
+    departments = Department.query.all()
+    
+    return render_template('reports/salary_report.html',
+                         staffing=staffing,
+                         departments=departments,
+                         department_id=department_id,
+                         total_salary=total_salary,
+                         avg_salary=avg_salary,
+                         total_employees=total_employees,
+                         dept_salary=dept_salary,
+                         pos_salary=pos_salary)
+
+@app.route('/reports/birthday-report')
+def report_birthdays():
+    """Отчёт: Дни рождения по месяцам"""
+    month = request.args.get('month', type=int)
+    current_month = datetime.now().month
+    current_year = datetime.now().year
+    
+    query = Employee.query.filter(Employee.is_active == True, Employee.birth_date.isnot(None))
+    
+    if month:
+        query = query.filter(extract('month', Employee.birth_date) == month)
+        title = f"Дни рождения за {month} месяц"
+    else:
+        title = "Все дни рождения"
+    
+    employees = query.order_by(extract('month', Employee.birth_date), 
+                                extract('day', Employee.birth_date)).all()
+    
+    # Группировка по месяцам
+    birthdays_by_month = {i: [] for i in range(1, 13)}
+    for emp in employees:
+        if emp.birth_date:
+            m = emp.birth_date.month
+            birthdays_by_month[m].append(emp)
+    
+    return render_template('reports/birthday_report.html',
+                         employees=employees,
+                         birthdays_by_month=birthdays_by_month,
+                         current_month=current_month,
+                         current_year=current_year,
+                         selected_month=month,
+                         title=title)
+
+@app.route('/reports/vacation-report')
+def report_vacations():
+    """Отчёт: Отпуска сотрудников"""
+    year = request.args.get('year', type=int, default=datetime.now().year)
+    department_id = request.args.get('department_id', type=int)
+    
+    query = Vacation.query.filter(extract('year', Vacation.start_date) == year)
+    
+    if department_id:
+        query = query.join(Employee).join(EmployeePosition).join(Staffing).filter(
+            Staffing.department_id == department_id
+        )
+    
+    vacations = query.order_by(Vacation.start_date).all()
+    
+    # Статистика
+    total_vacations = len(vacations)
+    total_days = sum(v.days_count for v in vacations)
+    avg_days = total_days / total_vacations if total_vacations > 0 else 0
+    
+    # По типам отпусков
+    by_type = {}
+    for v in vacations:
+        if v.type not in by_type:
+            by_type[v.type] = {'count': 0, 'days': 0}
+        by_type[v.type]['count'] += 1
+        by_type[v.type]['days'] += v.days_count
+    
+    departments = Department.query.all()
+    years = range(2020, datetime.now().year + 2)
+    
+    return render_template('reports/vacation_report.html',
+                         vacations=vacations,
+                         departments=departments,
+                         department_id=department_id,
+                         year=year,
+                         years=years,
+                         total_vacations=total_vacations,
+                         total_days=total_days,
+                         avg_days=avg_days,
+                         by_type=by_type)
+
+@app.route('/reports/sick-leave-report')
+def report_sick_leaves():
+    """Отчёт: Больничные листы"""
+    year = request.args.get('year', type=int, default=datetime.now().year)
+    department_id = request.args.get('department_id', type=int)
+    
+    query = SickLeave.query.filter(extract('year', SickLeave.start_date) == year)
+    
+    if department_id:
+        query = query.join(Employee).join(EmployeePosition).join(Staffing).filter(
+            Staffing.department_id == department_id
+        )
+    
+    sick_leaves = query.order_by(SickLeave.start_date).all()
+    
+    # Статистика
+    total_sick = len(sick_leaves)
+    total_days = sum(s.days_count for s in sick_leaves)
+    avg_days = total_days / total_sick if total_sick > 0 else 0
+    
+    # По месяцам
+    by_month = {i: {'count': 0, 'days': 0} for i in range(1, 13)}
+    for sl in sick_leaves:
+        m = sl.start_date.month
+        by_month[m]['count'] += 1
+        by_month[m]['days'] += sl.days_count
+    
+    # Топ диагнозов
+    diagnosis_stats = db.session.query(
+        SickLeave.diagnosis,
+        func.count(SickLeave.id).label('count'),
+        func.sum(SickLeave.days_count).label('total_days')
+    ).filter(extract('year', SickLeave.start_date) == year)\
+     .group_by(SickLeave.diagnosis).order_by(func.count(SickLeave.id).desc()).limit(5).all()
+    
+    departments = Department.query.all()
+    years = range(2020, datetime.now().year + 2)
+    
+    return render_template('reports/sick_leave_report.html',
+                         sick_leaves=sick_leaves,
+                         departments=departments,
+                         department_id=department_id,
+                         year=year,
+                         years=years,
+                         total_sick=total_sick,
+                         total_days=total_days,
+                         avg_days=avg_days,
+                         by_month=by_month,
+                         diagnosis_stats=diagnosis_stats)
+
+@app.route('/reports/staffing-report')
+def report_staffing():
+    """Отчёт: Штатное расписание и занятость"""
+    department_id = request.args.get('department_id', type=int)
+    
+    query = Staffing.query.filter_by(is_active=True)
+    
+    if department_id:
+        query = query.filter_by(department_id=department_id)
+    
+    staffing = query.all()
+    
+    # Статистика
+    total_positions = len(staffing)
+    total_rate = sum(float(s.rate) for s in staffing)
+    
+    occupied_positions = 0
+    occupied_rate = 0
+    
+    for s in staffing:
+        occupied = len([a for a in s.assignments if a.end_date is None])
+        if occupied > 0:
+            occupied_positions += 1
+            occupied_rate += float(s.rate)
+    
+    departments = Department.query.all()
+    
+    return render_template('reports/staffing_report.html',
+                         staffing=staffing,
+                         departments=departments,
+                         department_id=department_id,
+                         total_positions=total_positions,
+                         total_rate=total_rate,
+                         occupied_positions=occupied_positions,
+                         occupied_rate=occupied_rate)
+
+@app.route('/reports/turnover-report')
+def report_turnover():
+    """Отчёт: Текучесть кадров"""
+    year = request.args.get('year', type=int, default=datetime.now().year)
+    
+    # Принятые за год
+    hired = Employee.query.filter(extract('year', Employee.hire_date) == year).count()
+    
+    # Уволенные за год
+    dismissed = Employee.query.filter(
+        extract('year', Employee.dismissal_date) == year,
+        Employee.is_active == False
+    ).count()
+    
+    # Всего сотрудников на начало года
+    start_date = date(year, 1, 1)
+    employees_start = Employee.query.filter(
+        Employee.hire_date < start_date,
+        db.or_(
+            Employee.dismissal_date == None,
+            Employee.dismissal_date >= start_date
+        )
+    ).count()
+    
+    # Текучесть = (уволенные / среднее количество) * 100
+    avg_employees = (employees_start + (employees_start + hired - dismissed)) / 2
+    turnover_rate = (dismissed / avg_employees * 100) if avg_employees > 0 else 0
+    
+    # По месяцам
+    months = range(1, 13)
+    hired_by_month = {}
+    dismissed_by_month = {}
+    
+    for m in months:
+        hired_by_month[m] = Employee.query.filter(
+            extract('year', Employee.hire_date) == year,
+            extract('month', Employee.hire_date) == m
+        ).count()
+        dismissed_by_month[m] = Employee.query.filter(
+            extract('year', Employee.dismissal_date) == year,
+            extract('month', Employee.dismissal_date) == m,
+            Employee.is_active == False
+        ).count()
+    
+    years = range(2020, datetime.now().year + 2)
+    
+    return render_template('reports/turnover_report.html',
+                         year=year,
+                         years=years,
+                         hired=hired,
+                         dismissed=dismissed,
+                         employees_start=employees_start,
+                         turnover_rate=turnover_rate,
+                         hired_by_month=hired_by_month,
+                         dismissed_by_month=dismissed_by_month)
+
+@app.route('/reports/age-report')
+def report_age():
+    """Отчёт: Возрастной состав"""
+    employees = Employee.query.filter_by(is_active=True).all()
+    
+    # Возрастные группы
+    age_groups = {
+        '18-25': 0, '26-35': 0, '36-45': 0, '46-55': 0, '56+': 0
+    }
+    
+    age_list = []
+    
+    for emp in employees:
+        if emp.birth_date:
+            age = emp.age()
+            if age:
+                age_list.append(age)
+                if 18 <= age <= 25:
+                    age_groups['18-25'] += 1
+                elif 26 <= age <= 35:
+                    age_groups['26-35'] += 1
+                elif 36 <= age <= 45:
+                    age_groups['36-45'] += 1
+                elif 46 <= age <= 55:
+                    age_groups['46-55'] += 1
+                elif age >= 56:
+                    age_groups['56+'] += 1
+    
+    # Средний возраст
+    avg_age = sum(age_list) / len(age_list) if age_list else 0
+    
+    # По отделам
+    dept_age = {}
+    for dept in Department.query.all():
+        dept_employees = []
+        for emp in employees:
+            main_assignment = next((a for a in emp.assignments if a.is_main and a.end_date is None), None)
+            if main_assignment and main_assignment.staffing.department_id == dept.id and emp.age():
+                dept_employees.append(emp.age())
+        if dept_employees:
+            dept_age[dept.name] = sum(dept_employees) / len(dept_employees)
+    
+    return render_template('reports/age_report.html',
+                         employees=employees,
+                         age_groups=age_groups,
+                         avg_age=avg_age,
+                         total_employees=len(employees),
+                         dept_age=dept_age)
 # =====================================================
 # ЗАПУСК ПЛАНИРОВЩИКА И ПРИЛОЖЕНИЯ
 # =====================================================

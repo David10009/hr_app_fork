@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёт: Список сотрудников{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        👥 Отчёт: Список сотрудников
+        <button onclick="window.print()" class="btn btn-primary btn-sm" style="float: right;">🖨️ Печать</button>
+    </div>
+    
+    <!-- Фильтры -->
+    <div style="padding: 1rem; background: #f8f9fb; border-bottom: 1px solid #e8ecef;">
+        <form method="GET" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+            <div>
+                <label>🏢 Отдел</label>
+                <select name="department_id">
+                    <option value="">Все отделы</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}" {% if department_id == dept.id %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>📌 Статус</label>
+                <select name="status">
+                    <option value="all" {% if status == 'all' %}selected{% endif %}>Все</option>
+                    <option value="active" {% if status == 'active' %}selected{% endif %}>Активные</option>
+                    <option value="dismissed" {% if status == 'dismissed' %}selected{% endif %}>Уволенные</option>
+                </select>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-primary">🔍 Применить</button>
+                <a href="{{ url_for('report_employees_list') }}" class="btn btn-secondary">🔄 Сбросить</a>
+            </div>
+        </form>
+    </div>
+    
+    <div style="overflow-x: auto;">
+        <table class="info-table">
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>ФИО</th>
+                    <th>Дата рождения</th>
+                    <th>Возраст</th>
+                    <th>Должность</th>
+                    <th>Отдел</th>
+                    <th>Телефон</th>
+                    <th>Email</th>
+                    <th>Дата приёма</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for emp in employees %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ emp.full_name() }}</td>
+                    <td>{{ emp.birth_date.strftime('%d.%m.%Y') if emp.birth_date else '-' }}</td>
+                    <td>{{ emp.age() if emp.age() else '-' }}</td>
+                    <td>
+                        {% set main = emp.assignments|selectattr('is_main')|selectattr('end_date', 'none')|first %}
+                        {{ main.staffing.position.name if main and main.staffing else '-' }}
+                    </td>
+                    <td>
+                        {{ main.staffing.department.name if main and main.staffing else '-' }}
+                    </td>
+                    <td>{{ emp.phone or '-' }}</td>
+                    <td>{{ emp.email or '-' }}</td>
+                    <td>{{ emp.hire_date.strftime('%d.%m.%Y') }}</td>
+                    <td>
+                        {% if emp.is_active %}
+                            <span class="badge badge-success">Активен</span>
+                        {% else %}
+                            <span class="badge badge-danger">Уволен</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div style="padding: 1rem; background: #f8f9fb; border-top: 1px solid #e8ecef;">
+        <strong>Всего сотрудников: {{ employees|length }}</strong>
+    </div>
+</div>
+{% endblock %}

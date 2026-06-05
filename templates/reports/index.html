@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёты{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        📊 Система отчётов
+    </div>
+    <div style="padding: 1.25rem;">
+        <div class="report-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">👥</div>
+                <h3>Список сотрудников</h3>
+                <p style="color: #666;">Полный список сотрудников с фильтрацией по отделам и статусу</p>
+                <a href="{{ url_for('report_employees_list') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">💰</div>
+                <h3>Зарплатная ведомость</h3>
+                <p style="color: #666;">Анализ фонда оплаты труда по отделам и должностям</p>
+                <a href="{{ url_for('report_salary') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">🎂</div>
+                <h3>Дни рождения</h3>
+                <p style="color: #666;">Календарь дней рождения сотрудников по месяцам</p>
+                <a href="{{ url_for('report_birthdays') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">🌴</div>
+                <h3>Отпуска</h3>
+                <p style="color: #666;">Статистика отпусков по годам и типам</p>
+                <a href="{{ url_for('report_vacations') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">🤒</div>
+                <h3>Больничные листы</h3>
+                <p style="color: #666;">Анализ заболеваемости по месяцам и диагнозам</p>
+                <a href="{{ url_for('report_sick_leaves') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">📋</div>
+                <h3>Штатное расписание</h3>
+                <p style="color: #666;">Анализ занятости штатных единиц</p>
+                <a href="{{ url_for('report_staffing') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">🔄</div>
+                <h3>Текучесть кадров</h3>
+                <p style="color: #666;">Анализ приёма и увольнения сотрудников</p>
+                <a href="{{ url_for('report_turnover') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+            <div class="report-card" style="border: 1px solid #e8ecef; border-radius: 8px; padding: 20px;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">📊</div>
+                <h3>Возрастной состав</h3>
+                <p style="color: #666;">Анализ возрастной структуры персонала</p>
+                <a href="{{ url_for('report_age') }}" class="btn btn-primary">Сформировать →</a>
+            </div>
+            
+        </div>
+    </div>
+</div>
+{% endblock %}

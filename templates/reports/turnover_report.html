@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёт: Текучесть кадров{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        🔄 Отчёт: Текучесть кадров
+        <button onclick="window.print()" class="btn btn-primary btn-sm" style="float: right;">🖨️ Печать</button>
+    </div>
+    
+    <!-- Фильтры -->
+    <div style="padding: 1rem; background: #f8f9fb; border-bottom: 1px solid #e8ecef;">
+        <form method="GET" style="display: flex; gap: 10px; align-items: flex-end;">
+            <div>
+                <label>📅 Год</label>
+                <select name="year">
+                    {% for y in years %}
+                    <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-primary">🔍 Применить</button>
+                <a href="{{ url_for('report_turnover') }}" class="btn btn-secondary">🔄 Сбросить</a>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Статистика -->
+    <div class="stats-grid" style="padding: 1rem;">
+        <div class="stat-card">
+            <div class="stat-number">{{ hired }}</div>
+            <div class="stat-label">Принято</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ dismissed }}</div>
+            <div class="stat-label">Уволено</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format(turnover_rate) }}%</div>
+            <div class="stat-label">Текучесть</div>
+        </div>
+    </div>
+    
+    <!-- По месяцам -->
+    <div class="info-grid">
+        <div class="card">
+            <div class="card-header">📈 Принятые по месяцам</div>
+            <div id="hiredChart"></div>
+            <table class="info-table">
+                {% for m in range(1, 13) %}
+                <tr>
+                    <td>{{ m }} месяц</td>
+                    <td>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {{ (hired_by_month[m] / hired * 100) if hired > 0 else 0 }}%;">
+                                {{ hired_by_month[m] }} чел.
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">📉 Уволенные по месяцам</div>
+            <table class="info-table">
+                {% for m in range(1, 13) %}
+                <tr>
+                    <td>{{ m }} месяц</td>
+                    <td>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {{ (dismissed_by_month[m] / dismissed * 100) if dismissed > 0 else 0 }}%; background: #e74c3c;">
+                                {{ dismissed_by_month[m] }} чел.
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">ℹ️ Пояснение</div>
+        <div style="padding: 1rem;">
+            <ul>
+                <li><strong>Текучесть кадров</strong> = (Уволенные / Среднесписочная численность) × 100%</li>
+                <li><strong>Среднесписочная численность</strong> = (Численность на начало года + Численность на конец года) / 2</li>
+                <li>Нормальный уровень текучести: 3-7% в год</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
