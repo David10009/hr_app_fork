@@ -37,7 +37,7 @@ def login_required(f):
 # =====================================================
 
 def generate_captcha():
-    """Генерирует изображение капчи с большими символами (упрощённая версия)"""
+    """Генерирует изображение капчи с большими символами"""
     # Генерируем случайный текст
     captcha_text = generate_captcha_text()
     
@@ -46,45 +46,105 @@ def generate_captcha():
     session['captcha_time'] = datetime.now().timestamp()
     
     # Создаём изображение
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
     
-    width, height = 400, 150
+    width, height = 400, 150  # Увеличил размер изображения
     image = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
     
+    # Рисуем фон с градиентом
+    for i in range(height):
+        color = 240 - int(i / height * 50)
+        draw.line([(0, i), (width, i)], fill=(color, color, color))
+    
     # Добавляем шум
-    for _ in range(500):
+    for _ in range(800):
         x = random.randint(0, width)
         y = random.randint(0, height)
-        draw.point((x, y), fill=(random.randint(150, 220), random.randint(150, 220), random.randint(150, 220)))
+        draw.point((x, y), fill=(random.randint(100, 200), random.randint(100, 200), random.randint(100, 200)))
     
     # Добавляем линии
-    for _ in range(4):
+    for _ in range(5):
+        x1 = random.randint(0, width)
+        y1 = random.randint(0, height)
+        x2 = random.randint(0, width)
+        y2 = random.randint(0, height)
+        draw.line((x1, y1, x2, y2), fill=(random.randint(100, 150), random.randint(100, 150), random.randint(100, 150)), width=3)
+    
+    # Загружаем большой шрифт
+    font_size = 65  # Увеличенный размер шрифта
+    try:
+        # Пробуем разные шрифты
+        fonts_to_try = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Windows/Fonts/Arial.ttf"
+        ]
+        font = None
+        for font_path in fonts_to_try:
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except:
+                continue
+        if not font:
+            font = ImageFont.load_default()
+    except:
+        font = ImageFont.load_default()
+    
+    # Рисуем текст с искажениями
+    # Вычисляем позицию для центрирования
+    total_width = 0
+    char_positions = []
+    
+    # Сначала вычисляем ширину каждого символа
+    for char in captcha_text:
+        try:
+            bbox = draw.textbbox((0, 0), char, font=font)
+            char_width = bbox[2] - bbox[0]
+        except:
+            char_width = 40
+        char_positions.append(char_width)
+        total_width += char_width + 15  # Добавляем отступ между буквами
+    
+    # Начальная позиция для центрирования
+    start_x = (width - total_width) // 2
+    
+    x = start_x
+    for i, char in enumerate(captcha_text):
+        # Случайное смещение по Y
+        y = height // 2 + random.randint(-15, 15)
+        
+        # Случайный поворот (имитируем через смещение)
+        offset_x = random.randint(-3, 3)
+        offset_y = random.randint(-3, 3)
+        
+        # Рисуем тень
+        draw.text((x + 3 + offset_x, y + 3 + offset_y), char, fill=(180, 180, 180), font=font)
+        
+        # Рисуем основной текст с случайным цветом
+        text_color = (
+            random.randint(0, 100),
+            random.randint(0, 100),
+            random.randint(0, 100)
+        )
+        draw.text((x + offset_x, y + offset_y), char, fill=text_color, font=font)
+        
+        # Добавляем небольшое смещение для следующей буквы
+        x += char_positions[i] + 15 + random.randint(-5, 5)
+    
+    # Добавляем дополнительные линии для усложнения
+    for _ in range(3):
         x1 = random.randint(0, width)
         y1 = random.randint(0, height)
         x2 = random.randint(0, width)
         y2 = random.randint(0, height)
         draw.line((x1, y1, x2, y2), fill=(random.randint(150, 200), random.randint(150, 200), random.randint(150, 200)), width=2)
     
-    # Пытаемся загрузить большой шрифт
-    font_size = 60
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
-    except:
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
-        except:
-            font = ImageFont.load_default()
-    
-    # Рисуем текст по центру
-    x = 40
-    for i, char in enumerate(captcha_text):
-        y = 45 + random.randint(-5, 5)
-        # Рисуем тень
-        draw.text((x + 2, y + 2), char, fill=(150, 150, 150), font=font)
-        # Рисуем основной текст
-        draw.text((x, y), char, fill=(random.randint(0, 80), random.randint(0, 80), random.randint(0, 80)), font=font)
-        x += 55  # Увеличенный отступ между буквами
+    # Применяем лёгкое размытие
+    image = image.filter(ImageFilter.SMOOTH_MORE)
     
     # Сохраняем в байты
     img_byte_arr = io.BytesIO()
@@ -92,7 +152,6 @@ def generate_captcha():
     img_byte_arr.seek(0)
     
     return img_byte_arr
-
 # =====================================================
 # МАРШРУТЫ АВТОРИЗАЦИИ
 # =====================================================
