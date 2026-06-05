@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, extract, and_, or_
 from datetime import datetime, date, timedelta
@@ -7,11 +7,10 @@ import re
 import threading
 import time
 from functools import wraps
-from captcha.image import ImageCaptcha
 import random
 import string
 import io
-from flask import send_file
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 app.config.from_object('config.Config')
@@ -36,6 +35,15 @@ def login_required(f):
 # ФУНКЦИИ ДЛЯ КАПЧИ
 # =====================================================
 
+import random
+import string
+import io
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+def generate_captcha_text():
+    """Генерирует случайный текст для капчи"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
 def generate_captcha():
     """Генерирует изображение капчи с большими символами"""
     # Генерируем случайный текст
@@ -45,19 +53,12 @@ def generate_captcha():
     session['captcha_text'] = captcha_text
     session['captcha_time'] = datetime.now().timestamp()
     
-    # Создаём изображение
-    from PIL import Image, ImageDraw, ImageFilter, ImageFont
-    
-    width, height = 400, 150  # Увеличил размер изображения
+    # Параметры изображения
+    width, height = 400, 150
     image = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
     
-    # Рисуем фон с градиентом
-    for i in range(height):
-        color = 240 - int(i / height * 50)
-        draw.line([(0, i), (width, i)], fill=(color, color, color))
-    
-    # Добавляем шум
+    # Добавляем шум (случайные точки)
     for _ in range(800):
         x = random.randint(0, width)
         y = random.randint(0, height)
@@ -72,79 +73,38 @@ def generate_captcha():
         draw.line((x1, y1, x2, y2), fill=(random.randint(100, 150), random.randint(100, 150), random.randint(100, 150)), width=3)
     
     # Загружаем большой шрифт
-    font_size = 65  # Увеличенный размер шрифта
-    try:
-        # Пробуем разные шрифты
-        fonts_to_try = [
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/Windows/Fonts/Arial.ttf"
-        ]
-        font = None
-        for font_path in fonts_to_try:
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except:
-                continue
-        if not font:
-            font = ImageFont.load_default()
-    except:
+    font_size = 65
+    font = None
+    
+    # Список возможных путей к шрифтам
+    font_paths = [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"
+    ]
+    
+    for font_path in font_paths:
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+            break
+        except:
+            continue
+    
+    if font is None:
         font = ImageFont.load_default()
     
-    # Рисуем текст с искажениями
-    # Вычисляем позицию для центрирования
-    total_width = 0
-    char_positions = []
-    
-    # Сначала вычисляем ширину каждого символа
-    for char in captcha_text:
-        try:
-            bbox = draw.textbbox((0, 0), char, font=font)
-            char_width = bbox[2] - bbox[0]
-        except:
-            char_width = 40
-        char_positions.append(char_width)
-        total_width += char_width + 15  # Добавляем отступ между буквами
-    
-    # Начальная позиция для центрирования
-    start_x = (width - total_width) // 2
-    
-    x = start_x
+    # Рисуем текст
+    x = 40
     for i, char in enumerate(captcha_text):
-        # Случайное смещение по Y
-        y = height // 2 + random.randint(-15, 15)
-        
-        # Случайный поворот (имитируем через смещение)
-        offset_x = random.randint(-3, 3)
-        offset_y = random.randint(-3, 3)
-        
+        y = 45 + random.randint(-5, 5)
         # Рисуем тень
-        draw.text((x + 3 + offset_x, y + 3 + offset_y), char, fill=(180, 180, 180), font=font)
-        
-        # Рисуем основной текст с случайным цветом
-        text_color = (
-            random.randint(0, 100),
-            random.randint(0, 100),
-            random.randint(0, 100)
-        )
-        draw.text((x + offset_x, y + offset_y), char, fill=text_color, font=font)
-        
-        # Добавляем небольшое смещение для следующей буквы
-        x += char_positions[i] + 15 + random.randint(-5, 5)
-    
-    # Добавляем дополнительные линии для усложнения
-    for _ in range(3):
-        x1 = random.randint(0, width)
-        y1 = random.randint(0, height)
-        x2 = random.randint(0, width)
-        y2 = random.randint(0, height)
-        draw.line((x1, y1, x2, y2), fill=(random.randint(150, 200), random.randint(150, 200), random.randint(150, 200)), width=2)
-    
-    # Применяем лёгкое размытие
-    image = image.filter(ImageFilter.SMOOTH_MORE)
+        draw.text((x + 2, y + 2), char, fill=(150, 150, 150), font=font)
+        # Рисуем основной текст
+        draw.text((x, y), char, fill=(random.randint(0, 80), random.randint(0, 80), random.randint(0, 80)), font=font)
+        x += 55
     
     # Сохраняем в байты
     img_byte_arr = io.BytesIO()
@@ -152,6 +112,7 @@ def generate_captcha():
     img_byte_arr.seek(0)
     
     return img_byte_arr
+
 # =====================================================
 # МАРШРУТЫ АВТОРИЗАЦИИ
 # =====================================================
@@ -167,11 +128,17 @@ def captcha_image():
         )
     except Exception as e:
         print(f"Ошибка генерации капчи: {e}")
-        # Если ошибка, возвращаем простую капчу
+        # Возвращаем простую заглушку при ошибке
         return send_file(
             io.BytesIO(b''),
             mimetype='image/png'
         )
+
+@app.route('/refresh-captcha')
+def refresh_captcha():
+    """Обновляет капчу"""
+    generate_captcha()
+    return '', 204
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -213,20 +180,7 @@ def login():
     generate_captcha()
     
     return render_template('login.html')
-
-@app.route('/refresh-captcha')
-def refresh_captcha():
-    """Обновляет капчу"""
-    generate_captcha()
-    return '', 204
-
-@app.route('/logout')
-def logout():
-    """Выход из системы"""
-    session.clear()
-    flash('Вы вышли из системы', 'info')
-    return redirect(url_for('login'))
-
+    
 # =====================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ВАЛИДАЦИИ
 # =====================================================
